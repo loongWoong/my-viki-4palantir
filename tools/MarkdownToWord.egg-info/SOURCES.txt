@@ -1,0 +1,6 @@
+README.md
+setup.py
+MarkdownToWord.egg-info/PKG-INFO
+MarkdownToWord.egg-info/SOURCES.txt
+MarkdownToWord.egg-info/dependency_links.txt
+MarkdownToWord.egg-info/top_level.txt
