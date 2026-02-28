@@ -4,7 +4,7 @@ import sys
 import argparse
 from pathlib import Path
 from docx import Document
-from docx.shared import Pt, Inches
+from docx.shared import Pt, Inches, RGBColor
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 import markdown
 from bs4 import BeautifulSoup
@@ -22,8 +22,29 @@ def get_folder_structure(file_path, base_path):
     return folders
 
 
+def preprocess_markdown(md_content):
+    lines = md_content.split('\n')
+    processed_lines = []
+    
+    for line in lines:
+        if '```' in line and any(keyword in line for keyword in ['Polars', 'DuckDB', 'Pandas', 'PySpark', '极地', '鸭子数据库', '熊猫']):
+            if line.strip().endswith('```'):
+                processed_lines.append('```')
+            else:
+                continue
+        else:
+            processed_lines.append(line)
+    
+    return '\n'.join(processed_lines)
+
+
 def parse_markdown_to_html(md_content):
+    md_content = preprocess_markdown(md_content)
     return markdown.markdown(md_content, extensions=['tables', 'fenced_code'])
+
+
+def reset_list_numbering(doc):
+    pass
 
 
 def add_html_to_doc(doc, html_content, base_heading_level=1, md_file_path=None, docs_path=None):
@@ -31,23 +52,53 @@ def add_html_to_doc(doc, html_content, base_heading_level=1, md_file_path=None, 
     
     for element in soup.find_all(True):
         if element.name == 'h1':
-            level = min(base_heading_level, 9)
-            p = doc.add_heading(element.get_text(), level=level)
+            level = base_heading_level
+            if level <= 9:
+                p = doc.add_heading(element.get_text(), level=level)
+            else:
+                p = doc.add_paragraph(element.get_text())
+                p.runs[0].bold = True
+            reset_list_numbering(doc)
         elif element.name == 'h2':
-            level = min(base_heading_level + 1, max(base_heading_level + 1, 9))
-            p = doc.add_heading(element.get_text(), level=level)
+            level = base_heading_level + 1
+            if level <= 9:
+                p = doc.add_heading(element.get_text(), level=level)
+            else:
+                p = doc.add_paragraph(element.get_text())
+                p.runs[0].bold = True
+            reset_list_numbering(doc)
         elif element.name == 'h3':
-            level = min(base_heading_level + 2, max(base_heading_level + 2, 9))
-            p = doc.add_heading(element.get_text(), level=level)
+            level = base_heading_level + 2
+            if level <= 9:
+                p = doc.add_heading(element.get_text(), level=level)
+            else:
+                p = doc.add_paragraph(element.get_text())
+                p.runs[0].bold = True
+            reset_list_numbering(doc)
         elif element.name == 'h4':
-            level = min(base_heading_level + 3, max(base_heading_level + 3, 9))
-            p = doc.add_heading(element.get_text(), level=level)
+            level = base_heading_level + 3
+            if level <= 9:
+                p = doc.add_heading(element.get_text(), level=level)
+            else:
+                p = doc.add_paragraph(element.get_text())
+                p.runs[0].bold = True
+            reset_list_numbering(doc)
         elif element.name == 'h5':
-            level = min(base_heading_level + 4, max(base_heading_level + 4, 9))
-            p = doc.add_heading(element.get_text(), level=level)
+            level = base_heading_level + 4
+            if level <= 9:
+                p = doc.add_heading(element.get_text(), level=level)
+            else:
+                p = doc.add_paragraph(element.get_text())
+                p.runs[0].bold = True
+            reset_list_numbering(doc)
         elif element.name == 'h6':
-            level = min(base_heading_level + 5, max(base_heading_level + 5, 9))
-            p = doc.add_heading(element.get_text(), level=level)
+            level = base_heading_level + 5
+            if level <= 9:
+                p = doc.add_heading(element.get_text(), level=level)
+            else:
+                p = doc.add_paragraph(element.get_text())
+                p.runs[0].bold = True
+            reset_list_numbering(doc)
         elif element.name == 'p':
             img = element.find('img')
             if img:
@@ -72,18 +123,28 @@ def add_html_to_doc(doc, html_content, base_heading_level=1, md_file_path=None, 
             for li in element.find_all('li', recursive=False):
                 p = doc.add_paragraph(li.get_text(), style='List Bullet')
         elif element.name == 'ol':
-            for li in element.find_all('li', recursive=False):
-                p = doc.add_paragraph(li.get_text(), style='List Number')
+            list_items = element.find_all('li', recursive=False)
+            for idx, li in enumerate(list_items, 1):
+                text = li.get_text()
+                p = doc.add_paragraph(f'{idx}. {text}')
         elif element.name == 'pre':
-            code_text = element.get_text()
-            p = doc.add_paragraph(code_text)
-            p.style = 'No Spacing'
-            for run in p.runs:
-                run.font.name = 'Consolas'
-                run.font.size = Pt(9)
+            code_element = element.find('code')
+            if code_element:
+                code_text = code_element.get_text()
+            else:
+                code_text = element.get_text()
+            
+            lines = code_text.split('\n')
+            for line in lines:
+                if line.strip():
+                    cleaned_line = re.sub(r'^\d+', '', line)
+                    p = doc.add_paragraph(cleaned_line, style='代码')
         elif element.name == 'blockquote':
             p = doc.add_paragraph(element.get_text())
-            p.style = 'Intense Quote'
+            try:
+                p.style = 'Intense Quote'
+            except:
+                pass
         elif element.name == 'table':
             rows = element.find_all('tr')
             if rows:
@@ -117,9 +178,16 @@ def resolve_image_path(img_src, md_file_path, docs_path):
     return None
 
 
-def convert_markdown_to_word(docs_path, output_path):
-    doc = Document()
-    doc.add_heading('Documentation', level=0)
+def convert_markdown_to_word(docs_path, output_path, template_path=None):
+    if template_path and os.path.exists(template_path):
+        doc = Document(template_path)
+        for para in doc.paragraphs[:]:
+            para._element.getparent().remove(para._element)
+        for table in doc.tables[:]:
+            table._element.getparent().remove(table._element)
+    else:
+        doc = Document()
+        doc.add_heading('Documentation', level=0)
     
     md_files = []
     
@@ -142,7 +210,11 @@ def convert_markdown_to_word(docs_path, output_path):
             folder_path = '/'.join(folder_structure[:i+1])
             if folder_path not in created_folders:
                 heading_level = i + 1
-                doc.add_heading(folder, level=min(heading_level, 9))
+                if heading_level <= 9:
+                    doc.add_heading(folder, level=heading_level)
+                else:
+                    p = doc.add_paragraph(folder)
+                    p.runs[0].bold = True
                 created_folders.add(folder_path)
         
         with open(md_file, 'r', encoding='utf-8') as f:
@@ -152,7 +224,11 @@ def convert_markdown_to_word(docs_path, output_path):
         file_name = file_name.replace('-', ' ').replace('_', ' ')
         file_name = ' '.join(word.capitalize() for word in file_name.split())
         
-        doc.add_heading(file_name, level=min(base_heading_level, 9))
+        if base_heading_level <= 9:
+            doc.add_heading(file_name, level=base_heading_level)
+        else:
+            p = doc.add_paragraph(file_name)
+            p.runs[0].bold = True
         
         html_content = parse_markdown_to_html(md_content)
         add_html_to_doc(doc, html_content, base_heading_level=base_heading_level + 1, 
@@ -168,18 +244,20 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Convert Markdown files to Word document')
     parser.add_argument('docs_path', help='Path to the folder containing Markdown files')
     parser.add_argument('output_path', help='Path for the output Word document')
+    parser.add_argument('--template', help='Path to template Word document (optional)', default=None)
     
     args = parser.parse_args()
     
     docs_path = args.docs_path
     output_path = args.output_path
+    template_path = args.template
     
     if not os.path.exists(docs_path):
         print(f'Error: The specified folder does not exist: {docs_path}')
         sys.exit(1)
     
     try:
-        convert_markdown_to_word(docs_path, output_path)
+        convert_markdown_to_word(docs_path, output_path, template_path)
     except Exception as e:
         print(f'Error: {str(e)}')
         sys.exit(1)

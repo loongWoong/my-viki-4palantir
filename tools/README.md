@@ -66,7 +66,7 @@ python convert_md_to_word.py "文件夹路径" "输出文件路径"
 
 示例：
 ```bash
-python convert_md_to_word.py "C:\Users\leon\Downloads\docs\foundry\DI\etl\Applications\Data Lineage" "C:\Users\leon\Downloads\docs\foundry\DI\etl\Applications\Data Lineage.docx"
+python convert_md_to_word.py "C:\Users\leon\Downloads\docs\foundry\test\DI\" "C:\Users\leon\Downloads\docs\foundry\test\DI\trans.docx"
 ```
 
 ### 3.3 在代码中调用
