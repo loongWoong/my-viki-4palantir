@@ -35,6 +35,29 @@ def preprocess_markdown(md_content):
         else:
             processed_lines.append(line)
     
+    md_content = '\n'.join(processed_lines)
+    
+    lines = md_content.split('\n')
+    processed_lines = []
+    
+    for line in lines:
+        stripped = line.lstrip()
+        if stripped.startswith('- ') or stripped.startswith('* ') or re.match(r'^\d+\.', stripped):
+            indent = len(line) - len(line.lstrip())
+            
+            if indent == 2:
+                line = '    ' + stripped
+            elif indent == 3:
+                line = '    ' + stripped
+            elif indent == 4:
+                line = '        ' + stripped
+            elif indent == 5:
+                line = '        ' + stripped
+            elif indent == 6:
+                line = '            ' + stripped
+        
+        processed_lines.append(line)
+    
     return '\n'.join(processed_lines)
 
 
@@ -47,10 +70,57 @@ def reset_list_numbering(doc):
     pass
 
 
+def add_list_item_to_doc(doc, li, level=0, is_ordered=False, counter=None):
+    nested_ul = li.find('ul')
+    nested_ol = li.find('ol')
+    
+    if nested_ul:
+        nested_ul.extract()
+    if nested_ol:
+        nested_ol.extract()
+    
+    text = li.get_text().strip()
+    
+    if level == 0:
+        if is_ordered:
+            if counter is not None:
+                counter[0] += 1
+                p = doc.add_paragraph(f'{counter[0]}. {text}')
+            else:
+                p = doc.add_paragraph(f'1. {text}')
+        else:
+            p = doc.add_paragraph(text, style='List Bullet')
+    else:
+        p = doc.add_paragraph()
+        p.paragraph_format.left_indent = Inches(0.25 * level)
+        if is_ordered:
+            if counter is not None:
+                counter[0] += 1
+                run = p.add_run(f'{counter[0]}. {text}')
+            else:
+                run = p.add_run(f'1. {text}')
+        else:
+            run = p.add_run(f'• {text}')
+    
+    if nested_ul:
+        for nested_li in nested_ul.find_all('li', recursive=False):
+            add_list_item_to_doc(doc, nested_li, level=level + 1, is_ordered=False)
+    
+    if nested_ol:
+        nested_counter = [0]
+        for nested_li in nested_ol.find_all('li', recursive=False):
+            add_list_item_to_doc(doc, nested_li, level=level + 1, is_ordered=True, counter=nested_counter)
+
+
 def add_html_to_doc(doc, html_content, base_heading_level=1, md_file_path=None, docs_path=None):
     soup = BeautifulSoup(html_content, 'html.parser')
     
+    processed_elements = set()
+    
     for element in soup.find_all(True):
+        if element in processed_elements:
+            continue
+        
         if element.name == 'h1':
             level = base_heading_level
             if level <= 9:
@@ -120,13 +190,14 @@ def add_html_to_doc(doc, html_content, base_heading_level=1, md_file_path=None, 
                 if text:
                     p = doc.add_paragraph(text)
         elif element.name == 'ul':
+            processed_elements.update(element.find_all(True))
             for li in element.find_all('li', recursive=False):
-                p = doc.add_paragraph(li.get_text(), style='List Bullet')
+                add_list_item_to_doc(doc, li, level=0, is_ordered=False)
         elif element.name == 'ol':
-            list_items = element.find_all('li', recursive=False)
-            for idx, li in enumerate(list_items, 1):
-                text = li.get_text()
-                p = doc.add_paragraph(f'{idx}. {text}')
+            processed_elements.update(element.find_all(True))
+            counter = [0]
+            for li in element.find_all('li', recursive=False):
+                add_list_item_to_doc(doc, li, level=0, is_ordered=True, counter=counter)
         elif element.name == 'pre':
             code_element = element.find('code')
             if code_element:
@@ -140,12 +211,14 @@ def add_html_to_doc(doc, html_content, base_heading_level=1, md_file_path=None, 
                     cleaned_line = re.sub(r'^\d+', '', line)
                     p = doc.add_paragraph(cleaned_line, style='代码')
         elif element.name == 'blockquote':
+            processed_elements.update(element.find_all(True))
             p = doc.add_paragraph(element.get_text())
             try:
                 p.style = 'Intense Quote'
             except:
                 pass
         elif element.name == 'table':
+            processed_elements.update(element.find_all(True))
             rows = element.find_all('tr')
             if rows:
                 table = doc.add_table(rows=len(rows), cols=len(rows[0].find_all(['th', 'td'])))
